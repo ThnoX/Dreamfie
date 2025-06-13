@@ -1,13 +1,19 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 const Stripe = require('stripe');
 
+
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const stripe = Stripe('***REMOVED***MOMAIcLwCWQR5sYNJIKbJu5wBX4ozgYZDDuurqo4Vg5wh4g7MVyfnJ33pbDM9nni400RLG3vN3A');
+require("dotenv").config();
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
+
 
 /** 📨 SMTP yapılandırması **/
 const transporter = nodemailer.createTransport({
