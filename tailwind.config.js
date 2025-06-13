@@ -3,9 +3,10 @@ module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
-      colors: {
-        'powder-pink': '#FDEFF4', // Çok açık pudra pembesi
-      },
+  colors: {
+    'rose-soft': '#FFFCFD',
+  },
+
       keyframes: {
         float: {
           '0%, 100%': { transform: 'translateY(0)' },

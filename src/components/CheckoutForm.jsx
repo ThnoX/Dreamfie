@@ -1,11 +1,19 @@
 import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
-export default function CheckoutForm({ totalPrice }) {
+export default function CheckoutForm({ totalPrice, onSuccess }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const orderSent = useRef(false);
+
+  // Ödeme başarılı olduktan sonra flag sıfırlanıyor
+  useEffect(() => {
+    if (!success) {
+      orderSent.current = false;
+    }
+  }, [success]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -17,21 +25,43 @@ export default function CheckoutForm({ totalPrice }) {
       return;
     }
 
-    const cardElement = elements.getElement(CardElement);
+    try {
+      const res = await fetch('http://localhost:4242/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: totalPrice * 100 }),
+      });
 
-    const { error, paymentMethod } = await stripe.createPaymentMethod({
-      type: 'card',
-      card: cardElement,
-    });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Sunucu hatası: ${errorText}`);
+      }
 
-    if (error) {
-      alert(error.message);
-    } else {
-      console.log('✅ Ödeme başarılı:', paymentMethod);
-      setSuccess(true);
+      const { clientSecret } = await res.json();
+      const cardElement = elements.getElement(CardElement);
+
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: { card: cardElement },
+      });
+
+      if (error) {
+        alert("Ödeme başarısız: " + error.message);
+        setLoading(false);
+      } else if (paymentIntent.status === 'succeeded') {
+        setSuccess(true);
+        if (onSuccess && !orderSent.current) {
+          orderSent.current = true;
+          onSuccess();
+          // onSuccess sonrası genelde sayfa değişir, loading'i burada false yapmaya gerek yok
+        }
+      } else {
+        alert("Ödeme tamamlanamadı. Lütfen tekrar deneyin.");
+        setLoading(false);
+      }
+    } catch (err) {
+      alert("PaymentIntent oluşturulamadı: " + err.message);
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   if (success) {

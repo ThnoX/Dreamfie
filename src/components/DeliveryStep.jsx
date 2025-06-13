@@ -13,8 +13,9 @@ const themes = [
   { id: '9', name: 'Sihirli Okul' },
 ];
 
-export default function DeliveryStep({ onBack, onNext, selectedProduct, selectedTheme, note }) {
+export default function DeliveryStep({ onBack, onNext, selectedProduct, selectedTheme, note, emailSent, setEmailSent }) {
   const [delivery, setDelivery] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -24,28 +25,70 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
   });
 
   const handleChange = (e) => {
-    setForm((prevForm) => ({
-      ...prevForm,
+    setForm((prev) => ({
+      ...prev,
       [e.target.name]: e.target.value,
     }));
   };
 
   const isDigital = delivery === 'dijital';
-  const isValid =
-    delivery &&
-    form.name &&
-    form.email &&
-    (isDigital || (form.address && form.city && form.postalCode));
 
   const basePrice = selectedProduct?.price || 0;
   const totalPrice = delivery === 'fiziksel' ? basePrice + 159 : basePrice;
 
-  const handleSubmit = () => {
-    onNext({
-      delivery,
-      form,
-      totalPrice,
-    });
+  const isFormValid = () => {
+    if (!delivery) return false;
+    if (!form.name.trim() || !form.email.trim()) return false;
+    if (!isDigital && (!form.address.trim() || !form.city.trim() || !form.postalCode.trim())) return false;
+    return true;
+  };
+
+  // Sipariş gönderme fonksiyonu
+  const handleOrderSubmit = async () => {
+    if (emailSent || loading) {
+      console.warn('📭 Sipariş zaten gönderildi veya gönderim devam ediyor.');
+      return;
+    }
+
+    if (!isFormValid()) {
+      alert("Lütfen tüm gerekli teslimat bilgilerini eksiksiz doldurun.");
+      return;
+    }
+
+    setLoading(true);
+    console.log('📨 Sipariş gönderme işlemi başladı.');
+
+    const orderData = {
+      product: selectedProduct?.name || '',
+      price: totalPrice,
+      theme: themes.find((t) => t.id === String(selectedTheme))?.name || 'Tema Yok',
+      note: note || '',
+      deliveryType: delivery,
+      customer: form,
+    };
+
+    try {
+      const response = await fetch('http://localhost:4242/send-order-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderData),
+      });
+
+      if (response.ok) {
+        console.log('✅ Sipariş bilgisi başarıyla gönderildi.');
+        setEmailSent(true);
+        setForm({ name: '', email: '', address: '', city: '', postalCode: '' });
+        onNext();
+      } else {
+        console.error('❌ Sipariş gönderimi başarısız.');
+        alert('Sipariş gönderiminde bir hata oluştu. Lütfen tekrar deneyin.');
+      }
+    } catch (error) {
+      console.error('⚠️ Sipariş gönderme hatası:', error);
+      alert('Sipariş gönderilirken bir hata oluştu. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -59,24 +102,21 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
 
       {/* Teslimat Seçimi */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl mx-auto mb-12">
-        {[
-          {
-            type: 'dijital',
-            title: 'Dijital Teslimat',
-            desc: 'E-posta ile yüksek çözünürlüklü görsel gönderimi.',
-            price: `${basePrice} ₺`,
-            icon: '📧',
-            sub: 'Genellikle 1-2 iş günü içinde e-postanızda!',
-          },
-          {
-            type: 'fiziksel',
-            title: 'Fiziksel Teslimat',
-            desc: 'Baskılı ürün + kargo ile kapınıza kadar.',
-            price: `${basePrice + 159} ₺`,
-            icon: '📦',
-            sub: 'Kargo ücreti (159₺) dahilidir. 3-5 iş günü içinde teslim.',
-          },
-        ].map((opt) => {
+        {[{
+          type: 'dijital',
+          title: 'Dijital Teslimat',
+          desc: 'E-posta ile yüksek çözünürlüklü görsel gönderimi.',
+          price: `${basePrice} ₺`,
+          icon: '📧',
+          sub: 'Genellikle 1-2 iş günü içinde e-postanızda!',
+        }, {
+          type: 'fiziksel',
+          title: 'Fiziksel Teslimat',
+          desc: 'Baskılı ürün + kargo ile kapınıza kadar.',
+          price: `${basePrice + 159} ₺`,
+          icon: '📦',
+          sub: 'Kargo ücreti (159₺) dahilidir. 3-5 iş günü içinde teslim.',
+        }].map((opt) => {
           const isSelected = delivery === opt.type;
           const bgClass = isSelected
             ? opt.type === 'dijital'
@@ -114,6 +154,7 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
       {/* Teslimat Bilgileri */}
       {delivery && (
         <>
+          {/* Form */}
           <div className="bg-white rounded-2xl shadow-md max-w-3xl mx-auto p-6 mb-10">
             <h3 className="text-lg font-bold text-center mb-4 flex items-center justify-center gap-2">
               <span className="text-xl">📮</span>
@@ -123,13 +164,43 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <input name="name" placeholder="Adınız Soyadınız" value={form.name} onChange={handleChange} className="border rounded-lg p-2 w-full text-sm" />
-              <input name="email" placeholder="E-posta Adresiniz" value={form.email} onChange={handleChange} className="border rounded-lg p-2 w-full text-sm" />
+              <input
+                name="name"
+                placeholder="Adınız Soyadınız"
+                value={form.name}
+                onChange={handleChange}
+                className="border rounded-lg p-2 w-full text-sm"
+              />
+              <input
+                name="email"
+                placeholder="E-posta Adresiniz"
+                value={form.email}
+                onChange={handleChange}
+                className="border rounded-lg p-2 w-full text-sm"
+              />
               {!isDigital && (
                 <>
-                  <input name="address" placeholder="Adres" value={form.address} onChange={handleChange} className="border rounded-lg p-2 w-full text-sm md:col-span-2" />
-                  <input name="city" placeholder="Şehir" value={form.city} onChange={handleChange} className="border rounded-lg p-2 w-full text-sm" />
-                  <input name="postalCode" placeholder="Posta Kodu" value={form.postalCode} onChange={handleChange} className="border rounded-lg p-2 w-full text-sm" />
+                  <input
+                    name="address"
+                    placeholder="Adres"
+                    value={form.address}
+                    onChange={handleChange}
+                    className="border rounded-lg p-2 w-full text-sm md:col-span-2"
+                  />
+                  <input
+                    name="city"
+                    placeholder="Şehir"
+                    value={form.city}
+                    onChange={handleChange}
+                    className="border rounded-lg p-2 w-full text-sm"
+                  />
+                  <input
+                    name="postalCode"
+                    placeholder="Posta Kodu"
+                    value={form.postalCode}
+                    onChange={handleChange}
+                    className="border rounded-lg p-2 w-full text-sm"
+                  />
                 </>
               )}
             </div>
@@ -177,12 +248,11 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
                 Kart ile Güvenli Ödeme
               </span>
             </h3>
-            <CheckoutForm totalPrice={totalPrice} />
+            <CheckoutForm totalPrice={totalPrice} onSuccess={handleOrderSubmit} />
           </div>
         </>
       )}
 
-      {/* Butonlar */}
       <div className="flex justify-between max-w-3xl mx-auto">
         <button
           onClick={onBack}
@@ -190,7 +260,6 @@ export default function DeliveryStep({ onBack, onNext, selectedProduct, selected
         >
           ← Önceki
         </button>
-        
       </div>
     </div>
   );
